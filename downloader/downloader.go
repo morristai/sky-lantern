@@ -40,10 +40,11 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 	return nil
 }
 
+// TODO: outputFile may use interface
 func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistentChunk bool, outputFile *os.File) error {
 	numChunks := len(chunkURLs)
 	var wg sync.WaitGroup
-	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust, as our bottleneck should be network IO. Channel or ThreadLocal is not necessary.
+	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust but LOCK-FREE. Can use ordered channel to guarantee thread-safe. (But in this case, all i are unique)
 	chunkData := make([][]byte, numChunks)
 
 	for i, chunkURL := range chunkURLs {
