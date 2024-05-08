@@ -16,14 +16,29 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 	chunkSizes := make([]int64, numChunks)
 	chunkHashes := make([]string, numChunks)
 
+	type result struct {
+		index int
+		meta  utils.FileMeta
+		err   error
+	}
+
+	resultCh := make(chan result, numChunks)
+
 	for i, chunkURL := range chunkURLs {
-		chunkMeta, err := utils.GetFileMeta(chunkURL)
-		if err != nil {
-			log.Error().Err(err).Int("chunk", i).Msg("Failed to get size of chunk")
-			return err
+		go func(i int, chunkURL string) {
+			chunkMeta, err := utils.GetFileMeta(chunkURL)
+			resultCh <- result{index: i, meta: chunkMeta, err: err}
+		}(i, chunkURL)
+	}
+
+	for i := 0; i < numChunks; i++ {
+		res := <-resultCh
+		if res.err != nil {
+			log.Error().Err(res.err).Int("chunk", res.index).Msg("Failed to get size of chunk")
+			return res.err
 		}
-		chunkSizes[i] = chunkMeta.Size
-		chunkHashes[i] = chunkMeta.Hash
+		chunkSizes[res.index] = res.meta.Size
+		chunkHashes[res.index] = res.meta.Hash
 	}
 
 	outputFile, err := utils.CreateOutputFile(outputFilename)
