@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"fmt"
 	"github.com/rs/zerolog/log"
 	"os"
 	"path/filepath"
@@ -61,10 +62,10 @@ func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistent
 	var wg sync.WaitGroup
 	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust but LOCK-FREE. Can use ordered channel to guarantee thread-safe. (But in this case, all i are unique)
 	chunkData := make([][]byte, numChunks)
+	errChan := make(chan error, numChunks)
 
 	for i, chunkURL := range chunkURLs {
 		wg.Add(1)
-		// Spawn a goroutine to download each chunk
 		go func(i int, chunkURL string) {
 			defer wg.Done()
 
@@ -83,6 +84,7 @@ func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistent
 			data, err := utils.MakeHTTPRequest(chunkURL)
 			if err != nil {
 				log.Error().Err(err).Int("chunk", i).Msg("Failed to download chunk")
+				errChan <- fmt.Errorf("failed to download chunk %d: %v", i, err)
 				return
 			}
 
@@ -91,12 +93,21 @@ func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistent
 			if persistentChunk {
 				if err := os.WriteFile(chunkFilePath, data, 0644); err != nil {
 					log.Error().Err(err).Str("chunk", chunkFilename).Msg("Error saving chunk file")
+					errChan <- fmt.Errorf("failed to save chunk %d: %v", i, err)
 				}
 			}
 		}(i, chunkURL)
 	}
 
 	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			log.Error().Err(err).Msg("Error occurred during chunk download")
+			return err
+		}
+	}
 
 	for i, data := range chunkData {
 		if data == nil {
