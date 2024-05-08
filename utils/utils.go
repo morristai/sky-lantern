@@ -12,17 +12,24 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
 func MakeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+	const timeout = 10 * time.Second
+
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -46,13 +53,19 @@ type FileMeta struct {
 }
 
 func GetFileMeta(ctx context.Context, url string) (FileMeta, error) {
+	const timeout = 10 * time.Second
+
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
 	if err != nil {
 		log.Error().Err(err).Str("url", url).Msg("Failed to create HEAD request")
 		return FileMeta{}, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Error().Err(err).Str("url", url).Msg("Failed to send HEAD request")
 		return FileMeta{}, err
