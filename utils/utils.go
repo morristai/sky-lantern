@@ -1,10 +1,12 @@
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,13 +16,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func MakeHTTPRequest(url string) ([]byte, error) {
-	// Support Get requests for now
-	resp, err := http.Get(url)
+func MakeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("invalid status code: %d", resp.StatusCode)
+	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -35,13 +45,24 @@ type FileMeta struct {
 	Hash string
 }
 
-func GetFileMeta(url string) (FileMeta, error) {
-	resp, err := http.Head(url)
+func GetFileMeta(ctx context.Context, url string) (FileMeta, error) {
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		log.Error().Err(err).Str("url", url).Msg("Failed to create HEAD request")
+		return FileMeta{}, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Error().Err(err).Str("url", url).Msg("Failed to send HEAD request")
 		return FileMeta{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Error().Str("url", url).Int("statusCode", resp.StatusCode).Msg("Invalid status code")
+		return FileMeta{}, fmt.Errorf("invalid status code: %d", resp.StatusCode)
+	}
 
 	size, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
 	if err != nil {

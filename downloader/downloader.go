@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"context"
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"os"
@@ -17,6 +18,9 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 	chunkSizes := make([]int64, numChunks)
 	chunkHashes := make([]string, numChunks)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	type result struct {
 		index int
 		meta  utils.FileMeta
@@ -27,19 +31,24 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 
 	for i, chunkURL := range chunkURLs {
 		go func(i int, chunkURL string) {
-			chunkMeta, err := utils.GetFileMeta(chunkURL)
+			chunkMeta, err := utils.GetFileMeta(ctx, chunkURL)
 			resultCh <- result{index: i, meta: chunkMeta, err: err}
 		}(i, chunkURL)
 	}
 
 	for i := 0; i < numChunks; i++ {
-		res := <-resultCh
-		if res.err != nil {
-			log.Error().Err(res.err).Int("chunk", res.index).Msg("Failed to get size of chunk")
-			return res.err
+		select {
+		case res := <-resultCh:
+			if res.err != nil {
+				log.Error().Err(res.err).Int("chunk", res.index).Msg("Failed to get size of chunk")
+				cancel()
+				return res.err
+			}
+			chunkSizes[res.index] = res.meta.Size
+			chunkHashes[res.index] = res.meta.Hash
+		case <-ctx.Done():
+			return ctx.Err()
 		}
-		chunkSizes[res.index] = res.meta.Size
-		chunkHashes[res.index] = res.meta.Hash
 	}
 
 	outputFile, err := utils.CreateOutputFile(outputFilename)
@@ -48,7 +57,7 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 	}
 	defer outputFile.Close()
 
-	err = downloadAndWriteChunks(chunkURLs, chunkHashes, persistentChunk, outputFile)
+	err = downloadAndWriteChunks(ctx, chunkURLs, chunkHashes, persistentChunk, outputFile)
 	if err != nil {
 		return err
 	}
@@ -57,12 +66,15 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 }
 
 // TODO: outputFile may use interface
-func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistentChunk bool, outputFile *os.File) error {
+func downloadAndWriteChunks(ctx context.Context, chunkURLs []string, chunkHashes []string, persistentChunk bool, outputFile *os.File) error {
 	numChunks := len(chunkURLs)
 	var wg sync.WaitGroup
 	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust but LOCK-FREE. Can use ordered channel to guarantee thread-safe. (But in this case, all i are unique)
 	chunkData := make([][]byte, numChunks)
 	errChan := make(chan error, numChunks)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	for i, chunkURL := range chunkURLs {
 		wg.Add(1)
@@ -81,10 +93,11 @@ func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistent
 
 			log.Debug().Str("url", chunkURL).Int("chunk", i).Msg("Downloading chunk")
 
-			data, err := utils.MakeHTTPRequest(chunkURL)
+			data, err := utils.MakeHTTPRequest(ctx, chunkURL)
 			if err != nil {
 				log.Error().Err(err).Int("chunk", i).Msg("Failed to download chunk")
 				errChan <- fmt.Errorf("failed to download chunk %d: %v", i, err)
+				cancel() // Cancel the context to stop all other goroutines
 				return
 			}
 
@@ -93,7 +106,6 @@ func downloadAndWriteChunks(chunkURLs []string, chunkHashes []string, persistent
 			if persistentChunk {
 				if err := os.WriteFile(chunkFilePath, data, 0644); err != nil {
 					log.Error().Err(err).Str("chunk", chunkFilename).Msg("Error saving chunk file")
-					errChan <- fmt.Errorf("failed to save chunk %d: %v", i, err)
 				}
 			}
 		}(i, chunkURL)
