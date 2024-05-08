@@ -24,7 +24,7 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	chunkURLs := flag.Args()
-	if len(chunkURLs) < 2 {
+	if len(chunkURLs) == 0 {
 		log.Error().Msg("Usage: go run main.go [flags] <chunk1_url> <chunk2_url> <chunk3_url> ...")
 		flag.PrintDefaults()
 		os.Exit(1)
