@@ -29,3 +29,16 @@ bash ./run.sh
 - `main.go`: The entry point of the application, handling user input and starting the download process.
 - `downloader/downloader.go`: Contains the main logic for the multi-source downloader, including chunk reassembly and hash verification.
 - `utils/utils.go`: Provides utility functions, such as making HTTP requests and calculating file hashes.
+
+## Change Log
+
+- **2024-05-11**: My initial thought was we can grab the chunks URL from the response header.
+But that will only work for custom servers. So, I decided to let the user provide the URLs of all the chunks to make it more generic.
+
+## Future Improvements
+
+- In current implementation, we first grab the chunk headers to get the file size and the ETag(hash), it seems not necessary for the project.
+  But this is for a real-world scenario where download behavior might depend on the information in the headers. (Kind of like `stat` operation)
+- When we write our chunks to the file, we can leverage cursor to write the chunks to the correct position.
+- Use channels to handle the download of chunks concurrently. Currently, we are using Lock-Free shared memory to store the chunks.
+- Implement a tracker server to manage the distribution of chunks.

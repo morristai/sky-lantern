@@ -15,7 +15,6 @@ const chunkFolder = "./cache"
 
 func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename string) error {
 	numChunks := len(chunkURLs)
-	chunkSizes := make([]int64, numChunks)
 	chunkHashes := make([]string, numChunks)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -29,6 +28,8 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 
 	resultCh := make(chan result, numChunks)
 
+	// NOTE: This operation simulates file info requests for each chunk, which seems to be unnecessary in this project.
+	// But in real-world scenarios, some download behaviors may differ based on the file info.
 	for i, chunkURL := range chunkURLs {
 		go func(i int, chunkURL string) {
 			chunkMeta, err := utils.GetFileMeta(ctx, chunkURL)
@@ -44,7 +45,6 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 				cancel()
 				return res.err
 			}
-			chunkSizes[res.index] = res.meta.Size
 			chunkHashes[res.index] = res.meta.Hash
 		case <-ctx.Done():
 			return ctx.Err()
@@ -69,7 +69,7 @@ func DownloadFile(chunkURLs []string, persistentChunk bool, outputFilename strin
 func downloadAndWriteChunks(ctx context.Context, chunkURLs []string, chunkHashes []string, persistentChunk bool, outputFile *os.File) error {
 	numChunks := len(chunkURLs)
 	var wg sync.WaitGroup
-	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust but LOCK-FREE. Can use ordered channel to guarantee thread-safe. (But in this case, all i are unique)
+	// NOTE: like Arc<Mutex<Vec<Bytes>>> in Rust but LOCK-FREE. Can use channel to guarantee thread-safe. (But in this case, all i are unique)
 	chunkData := make([][]byte, numChunks)
 	errChan := make(chan error, numChunks)
 
