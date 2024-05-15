@@ -1,122 +1,130 @@
-package utils
+package utils_test
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"os"
+	"context"
+	"sky-lantern/utils"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMakeHTTPRequest(t *testing.T) {
-	// Test case 1: Successful GET request
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("test response"))
-	}))
-	defer server.Close()
+	ctx := context.Background()
 
-	data, err := MakeHTTPRequest(server.URL)
-	if err != nil {
-		t.Errorf("MakeHTTPRequest failed: %v", err)
-	}
-	if string(data) != "test response" {
-		t.Errorf("Unexpected response: %s", string(data))
-	}
+	// Test with a valid URL
+	validURL := "https://morristai.github.io/data/60MB_file.txt_chunk_aa"
+	data, err := utils.MakeHTTPRequest(ctx, validURL)
+	assert.NoError(t, err)
+	assert.NotNil(t, data)
 
-	// Test case 2: Invalid URL
-	_, err = MakeHTTPRequest("invalid_url")
-	if err == nil {
-		t.Error("MakeHTTPRequest should have failed with an invalid URL")
-	}
+	// Test with an invalid URL
+	invalidURL := "invalid-url"
+	data, err = utils.MakeHTTPRequest(ctx, invalidURL)
+	assert.Error(t, err)
+	assert.Nil(t, data)
+
+	// Test with a URL that returns a non-200 status code
+	nonOKURL := "https://morristai.github.io/data/60MB_file.txt_chunk_az"
+	data, err = utils.MakeHTTPRequest(ctx, nonOKURL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid status code")
+	assert.Nil(t, data)
+
+	// TODO: Test with a URL that times out
 }
 
 func TestGetFileMeta(t *testing.T) {
-	// Test case 1: Retrieve file size and hash
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Length", "1024")
-		w.Header().Set("Etag", "test_hash")
-	}))
-	defer server.Close()
+	ctx := context.Background()
 
-	meta, err := GetFileMeta(server.URL)
-	if err != nil {
-		t.Errorf("GetFileMeta failed: %v", err)
-	}
-	if meta.Size != 1024 {
-		t.Errorf("Unexpected file size: %d", meta.Size)
-	}
-	if meta.Hash != "test_hash" {
-		t.Errorf("Unexpected file hash: %s", meta.Hash)
-	}
+	// Test with a valid URL
+	validURL := "https://morristai.github.io/data/60MB_file.txt_chunk_aa"
+	meta, err := utils.GetFileMeta(ctx, validURL)
+	assert.NoError(t, err)
+	assert.NotZero(t, meta.Size)
+	assert.NotEmpty(t, meta.Hash)
 
-	// Test case 2: Invalid URL
-	_, err = GetFileMeta("invalid_url")
-	if err == nil {
-		t.Error("GetFileMeta should have failed with an invalid URL")
-	}
+	// Test with an invalid URL
+	invalidURL := "invalid-url"
+	meta, err = utils.GetFileMeta(ctx, invalidURL)
+	assert.Error(t, err)
+	assert.Zero(t, meta.Size)
+	assert.Empty(t, meta.Hash)
+
+	// Test with a URL that returns a non-200 status code
+	nonOKURL := "https://morristai.github.io/data/60MB_file.txt_chunk_az"
+	meta, err = utils.GetFileMeta(ctx, nonOKURL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid status code")
+	assert.Zero(t, meta.Size)
+	assert.Empty(t, meta.Hash)
 }
 
 func TestCalculateFileSha256(t *testing.T) {
-	data := []byte("test data")
-	expectedHash := "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
-	hash, err := CalculateFileSha256(data)
-	if err != nil {
-		t.Errorf("CalculateFileSha256 failed: %v", err)
-	}
-	if hash != expectedHash {
-		t.Errorf("Unexpected hash: %s", hash)
-	}
+	// Test with sample data
+	data := []byte("Hello, World!")
+	expectedHash := "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f"
+	hash, err := utils.CalculateFileSha256(data)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+
+	// Test with empty data
+	emptyData := []byte{}
+	expectedEmptyHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	hash, err = utils.CalculateFileSha256(emptyData)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedEmptyHash, hash)
 }
 
 func TestCalculateFileSha1(t *testing.T) {
-	data := []byte("test data")
-	expectedHash := "f48dd853820860816c75d54d0f584dc863327a7c"
-	hash, err := CalculateFileSha1(data)
-	if err != nil {
-		t.Errorf("CalculateFileSha1 failed: %v", err)
-	}
-	if hash != expectedHash {
-		t.Errorf("Unexpected hash: %s", hash)
-	}
+	// Test with sample data
+	data := []byte("Hello, World!")
+	expectedHash := "0a0a9f2a6772942557ab5355d76af442f8f65e01"
+	hash, err := utils.CalculateFileSha1(data)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+
+	// Test with empty data
+	emptyData := []byte{}
+	expectedEmptyHash := "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	hash, err = utils.CalculateFileSha1(emptyData)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedEmptyHash, hash)
 }
 
 func TestCalculateFileMD5(t *testing.T) {
-	data := []byte("test data")
-	expectedHash := "eb733a00c0c9d336e65691a37ab54293"
-	hash, err := CalculateFileMD5(data)
-	if err != nil {
-		t.Errorf("CalculateFileMD5 failed: %v", err)
-	}
-	if hash != expectedHash {
-		t.Errorf("Unexpected hash: %s", hash)
-	}
+	// Test with sample data
+	data := []byte("Hello, World!")
+	expectedHash := "65a8e27d8879283831b664bd8b7f0ad4"
+	hash, err := utils.CalculateFileMD5(data)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedHash, hash)
+
+	// Test with empty data
+	emptyData := []byte{}
+	expectedEmptyHash := "d41d8cd98f00b204e9800998ecf8427e"
+	hash, err = utils.CalculateFileMD5(emptyData)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedEmptyHash, hash)
 }
 
 func TestCreateOutputFile(t *testing.T) {
-	// Test case 1: Create output file
-	outputFilename := "test_output.txt"
-	outputFile, err := CreateOutputFile(outputFilename)
-	if err != nil {
-		t.Errorf("CreateOutputFile failed: %v", err)
-	}
-	defer outputFile.Close()
-	// Check that the output file was created
-	_, err = os.Stat(outputFilename)
-	if os.IsNotExist(err) {
-		t.Errorf("Output file '%s' was not created", outputFilename)
-	}
-	os.Remove(outputFilename)
+	// Test with a valid output filename
+	validFilename := "output.txt"
+	file, err := utils.CreateOutputFile(validFilename)
+	assert.NoError(t, err)
+	assert.NotNil(t, file)
+	file.Close()
 
-	// Test case 2: Create output file in non-existent directory
-	outputFilename = "nonexistent/test_output.txt"
-	outputFile, err = CreateOutputFile(outputFilename)
-	if err != nil {
-		t.Errorf("CreateOutputFile failed: %v", err)
-	}
-	defer outputFile.Close()
-	// Check that the output file was created
-	_, err = os.Stat(outputFilename)
-	if os.IsNotExist(err) {
-		t.Errorf("Output file '%s' was not created", outputFilename)
-	}
-	os.RemoveAll("nonexistent")
+	// Test with a non-existent directory in the output filename
+	nestedFilename := "nested/dir/output.txt"
+	file, err = utils.CreateOutputFile(nestedFilename)
+	assert.NoError(t, err)
+	assert.NotNil(t, file)
+	file.Close()
+
+	// Test with an invalid output filename (e.g., a directory instead of a file)
+	invalidFilename := "invalid/"
+	file, err = utils.CreateOutputFile(invalidFilename)
+	assert.Error(t, err)
+	assert.Nil(t, file)
 }
